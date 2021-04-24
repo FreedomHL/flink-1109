@@ -27,7 +27,7 @@ public class Flink07_Process_Timer {
         SingleOutputStreamOperator<WaterSensor> resultDS = waterSensorDS.keyBy(data -> data.getId())
                 .process(new KeyedProcessFunction<String, WaterSensor, WaterSensor>() {
 
-                    //获取上一次
+                    //获取上一次水位线
                     Double lastVc = Double.MIN_VALUE;
 
                     //保存上一次的定时器时间
@@ -48,18 +48,23 @@ public class Flink07_Process_Timer {
                         long ts = timerService.currentProcessingTime();
 
 
-                        if (vc >= lastVc) {
+                        if (vc >= lastVc && tsTime == 0L) {
                             //水位线上升,注册定时器
+
                             timerService.registerProcessingTimeTimer(ts + 5000L);
+
                             //保存此定时器的时间
                             tsTime = ts + 5000L;
                             //将此次水位线 置为上一次水位线
                             lastVc = vc;
+
                         } else if (vc < lastVc) {
                             //水位线下降，删除定时器
                             timerService.deleteProcessingTimeTimer(tsTime);
                             //将此次水位线 置为上一次水位线
                             lastVc = vc;
+                            //重置定时时间,来保证5s内只报警一次
+                            tsTime = 0L;
                         }
 
 
@@ -69,6 +74,8 @@ public class Flink07_Process_Timer {
                     public void onTimer(long timestamp, OnTimerContext ctx, Collector<WaterSensor> out) throws Exception {
                         ctx.output(new OutputTag<String>("side") {
                         }, "水位线连续上升报警！" + ctx.getCurrentKey());
+
+                        tsTime = 0L;
                     }
                 });
 
